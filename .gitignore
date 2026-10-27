@@ -1,0 +1,22 @@
+# Secretos
+.env
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Datos generados por la ingesta
+data/processed/
+
+# Editores / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
