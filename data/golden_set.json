@@ -1,0 +1,22 @@
+[
+  {
+    "pregunta": "What Python version does ADK require?",
+    "documento_id_esperado": "T-DEVAGENT-I-m1-l1-en-file-1.en.pdf"
+  },
+  {
+    "pregunta": "Which command scaffolds a new agent project and which files does it create?",
+    "documento_id_esperado": "T-DEVAGENT-I-m1-l1-en-file-1.en.pdf"
+  },
+  {
+    "pregunta": "What are the four core parameters that define an LlmAgent?",
+    "documento_id_esperado": "T-DEVAGENT-I-m2-l0-en-file-2.en.pdf"
+  },
+  {
+    "pregunta": "Which example questions should I use to test the math tutor in the web interface?",
+    "documento_id_esperado": "T-DEVAGENT-I-m2-l1-en-file-3.en.pdf"
+  },
+  {
+    "pregunta": "How do I run my agent as a REST API with adk api_server?",
+    "documento_id_esperado": "T-DEVAGENT-I-m3-l0-en-file-4.en.pdf"
+  }
+]
