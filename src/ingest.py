@@ -6,10 +6,12 @@ from langchain_pinecone import PineconeEmbeddings, PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.config import (
+    CATEGORIES_PATH,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
     CHUNKS_PATH,
     DATA_DIR,
+    DEFAULT_CATEGORY,
     EMBED_MODEL,
     PINECONE_API_KEY,
     PINECONE_NAMESPACE,
@@ -17,17 +19,38 @@ from src.config import (
 from src.setup_index import ensure_index
 
 
+def load_categories() -> dict[str, dict]:
+    """Lee el mapeo archivo -> {category, tags}. Si no existe, todos los documentos quedan sin categoría."""
+    if not CATEGORIES_PATH.exists():
+        return {}
+    return json.loads(CATEGORIES_PATH.read_text(encoding="utf-8"))
+
+
+def build_metadata(source: str, page: int, categories: dict[str, dict]) -> dict:
+    """Metadata de cada página: fuente, página (1-based), categoría y etiquetas."""
+    info = categories.get(source, {})
+    return {
+        "source": source,
+        "page": page,
+        "category": info.get("category", DEFAULT_CATEGORY),
+        "tags": list(info.get("tags", [])),
+    }
+
+
 def load_pdfs() -> list[Document]:
-    """Carga los PDFs de data/ dejando en la metadata solo archivo y página (1-based)."""
+    """Carga los PDFs de data/ con la metadata definida en build_metadata."""
     pdfs = sorted(DATA_DIR.glob("*.pdf"))
     if not pdfs:
         raise FileNotFoundError(f"No hay PDFs en {DATA_DIR}.")
 
+    categories = load_categories()
     docs = []
     for pdf_path in pdfs:
+        if pdf_path.name not in categories:
+            print(f"Aviso: {pdf_path.name} no está en {CATEGORIES_PATH.name}, se usa '{DEFAULT_CATEGORY}'.")
         paginas = PyPDFLoader(str(pdf_path)).load()
         for doc in paginas:
-            doc.metadata = {"source": pdf_path.name, "page": doc.metadata["page"] + 1}
+            doc.metadata = build_metadata(pdf_path.name, doc.metadata["page"] + 1, categories)
         docs.extend(paginas)
         print(f"{pdf_path.name}: {len(paginas)} páginas")
 
@@ -76,12 +99,20 @@ def get_vectorstore() -> PineconeVectorStore:
     )
 
 
-def ingest(force: bool = False) -> None:
-    """Carga, fragmenta y sube los chunks. Si el namespace ya tiene vectores no reindexa."""
-    vectorstore = get_vectorstore()
+def namespace_vector_count(vectorstore: PineconeVectorStore) -> int:
     stats = vectorstore.index.describe_index_stats()
     existentes = stats.namespaces.get(PINECONE_NAMESPACE)
-    total = existentes.vector_count if existentes else 0
+    return existentes.vector_count if existentes else 0
+
+
+def ingest(force: bool = False) -> None:
+    """Carga, fragmenta y sube los chunks. Si el namespace ya tiene vectores no reindexa.
+
+    Con force=True borra el namespace antes de subir, para no dejar vectores huérfanos
+    de documentos eliminados o de un chunking anterior.
+    """
+    vectorstore = get_vectorstore()
+    total = namespace_vector_count(vectorstore)
 
     if total > 0 and CHUNKS_PATH.exists() and not force:
         print(f"El namespace '{PINECONE_NAMESPACE}' ya tiene {total} vectores. No se reindexa.")
@@ -90,12 +121,18 @@ def ingest(force: bool = False) -> None:
     chunks = split_docs(load_pdfs())
     save_chunks(chunks)
 
-    # Los ids son determinísticos, así que re-subir sobrescribe en lugar de duplicar.
+    if total > 0:
+        vectorstore.index.delete(delete_all=True, namespace=PINECONE_NAMESPACE)
+        print(f"Borrados {total} vectores del namespace '{PINECONE_NAMESPACE}'.")
+
+    # Los ids son determinísticos, así que una re-subida parcial sobrescribe en lugar de duplicar.
     vectorstore.add_documents(chunks, ids=[c.id for c in chunks])
     print(f"Subidos {len(chunks)} chunks al namespace '{PINECONE_NAMESPACE}'.")
 
 
 if __name__ == "__main__":
-    import sys
+    import argparse
 
-    ingest(force="--force" in sys.argv)
+    parser = argparse.ArgumentParser(description="Ingesta de PDFs en Pinecone.")
+    parser.add_argument("--force", action="store_true", help="Borra el namespace y reindexa todo.")
+    ingest(force=parser.parse_args().force)

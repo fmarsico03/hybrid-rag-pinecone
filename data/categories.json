@@ -1,0 +1,18 @@
+{
+  "T-DEVAGENT-I-m1-l1-en-file-1.en.pdf": {
+    "category": "setup",
+    "tags": ["instalacion", "entorno", "api-key", "adk-create"]
+  },
+  "T-DEVAGENT-I-m2-l0-en-file-2.en.pdf": {
+    "category": "agent-definition",
+    "tags": ["parametros", "description", "instruction", "root-agent"]
+  },
+  "T-DEVAGENT-I-m2-l1-en-file-3.en.pdf": {
+    "category": "agent-customization",
+    "tags": ["hands-on", "math-tutor", "adk-web"]
+  },
+  "T-DEVAGENT-I-m3-l0-en-file-4.en.pdf": {
+    "category": "deployment",
+    "tags": ["adk-run", "api-server", "runner", "sesiones"]
+  }
+}

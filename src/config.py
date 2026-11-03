@@ -8,6 +8,9 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 CHUNKS_PATH = DATA_DIR / "processed" / "chunks.json"
+CATEGORIES_PATH = DATA_DIR / "categories.json"
+GOLDEN_SET_PATH = DATA_DIR / "golden_set.json"
+DEFAULT_CATEGORY = "general"
 
 
 def _require(name: str) -> str:
