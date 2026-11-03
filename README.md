@@ -9,21 +9,6 @@ Módulo de recuperación escalable en la nube: los documentos se indexan en **Pi
 - **LLM:** Google Gemini (`gemini-3.8-flash`), vía `langchain-google-genai`
 - **Orquestación:** LangChain (LCEL) + `PydanticOutputParser`
 
-## Cumplimiento de la consigna
-
-| Requisito | Implementación |
-|---|---|
-| `.env` con API key de Pinecone, del LLM e `INDEX_NAME` | `.env.example`. Se usa Gemini como LLM (`GOOGLE_API_KEY`) |
-| Script que verifica si el índice existe y lo crea (Serverless) | `src/setup_index.py` |
-| Ingesta con `RecursiveCharacterTextSplitter` y embeddings en Pinecone | `src/ingest.py` |
-| Texto original y fuente en la metadata de Pinecone | Campo `text` + `source`, `page`, `category`, `tags` |
-| Namespaces | Todo vive en el namespace `PINECONE_NAMESPACE` (`docs`) |
-| `BM25Retriever` + Pinecone combinados con `EnsembleRetriever` | `src/retriever.py` |
-| Clase `RAGSystem` que devuelve el top-5 híbrido | `RAGSystem.retrieve(query)` en `src/retriever.py` |
-| Golden set `{"pregunta", "documento_id_esperado"}` con 5 preguntas | `data/golden_set.json` |
-| `evaluate.py` con Precision@5 y Recall@5 + reporte en consola | `src/evaluate.py` (además calcula MRR y compara los 3 modos) |
-| Métricas resumidas en el README | [Resultados de la evaluación](#resultados-de-la-evaluación) |
-
 ## ¿Por qué híbrido?
 
 | Búsqueda | Es buena para | Falla con |
@@ -138,10 +123,8 @@ cp .env.example .env    # en Windows: copy .env.example .env
 # Editar .env y completar PINECONE_API_KEY y GOOGLE_API_KEY
 ```
 
-- La API key de Pinecone se obtiene en [app.pinecone.io](https://app.pinecone.io) (el plan gratuito alcanza).
+- La API key de Pinecone se obtiene en [app.pinecone.io](https://app.pinecone.io) 
 - La API key de Google se obtiene en [Google AI Studio](https://aistudio.google.com/apikey).
-
-El archivo `.env` está en el `.gitignore` y no se sube al repositorio.
 
 ### Variables de entorno
 
@@ -191,50 +174,3 @@ python -m src.rag         # cadena RAG con dos pruebas (una respondible y una tr
 python -m src.evaluate    # métricas de recuperación
 python -m pytest          # tests unitarios (no necesitan API keys)
 ```
-
-## Resultados de la evaluación
-
-Salida de `python -m src.evaluate` (k=5):
-
-```
-Detalle por pregunta — Híbrido [0.5, 0.5]
-----------------------------------------------------------------------------------------------------
-Q1. What Python version does ADK require?
-    esperado: file-1 | top-5: [file-1, file-1, file-1, file-1, file-4] | P@5=0.80  R@5=1  RR=1.00
-Q2. Which command scaffolds a new agent project and which files does it create?
-    esperado: file-1 | top-5: [file-1, file-4, file-1, file-2, file-1] | P@5=0.60  R@5=1  RR=1.00
-Q3. What are the four core parameters that define an LlmAgent?
-    esperado: file-2 | top-5: [file-2, file-2, file-2, file-3, file-3] | P@5=0.60  R@5=1  RR=1.00
-Q4. Which example questions should I use to test the math tutor in the web interface?
-    esperado: file-3 | top-5: [file-3, file-3, file-3, file-4, file-3] | P@5=0.80  R@5=1  RR=1.00
-Q5. How do I run my agent as a REST API with adk api_server?
-    esperado: file-4 | top-5: [file-4, file-4, file-4, file-3, file-1] | P@5=0.60  R@5=1  RR=1.00
-
-Resumen (5 preguntas, k=5)
-----------------------------------------------------
-Modo                   Precision@5  Recall@5     MRR
-BM25 (léxico)                 0.64      1.00    1.00
-Pinecone (semántico)          0.76      1.00    1.00
-Híbrido [0.5, 0.5]            0.68      1.00    1.00
-```
-
-Con k=3 (`python -m src.evaluate -k 3`): Precision@3 de 0.73 (BM25), 0.93 (semántico) y 0.87 (híbrido); Recall@3 y MRR de 1.00 en los tres.
-
-**Lectura de los resultados:**
-- **Recall@5 = 1.00 y MRR = 1.00 en los tres modos:** para las 5 preguntas, el documento correcto aparece y además queda **primero**. Con un corpus de 4 documentos temáticamente separados, las 5 preguntas no alcanzan para diferenciar los modos en recall.
-- **Precision@5:** el semántico obtiene la mejor (0.76) y el híbrido queda entre los dos (0.68). BM25 trae chunks de otros documentos que comparten palabras (`adk web`, `agent`, `root_agent` aparecen en casi todos los PDFs), y la fusión hereda parte de ese ruido en las últimas posiciones.
-- **Dónde aporta el híbrido:** en consultas con identificadores exactos. Con `What does the Runner do with InMemorySessionService?`, solo dos chunks contienen ese término (`file-4` p.4 y p.5). El semántico ubica p.4 en el **5° lugar**; BM25 la pone 2°, y el híbrido deja **ambos chunks en los dos primeros puestos**. Para un corpus con mayoría de preguntas conceptuales, los pesos se pueden inclinar hacia el semántico (p. ej. `WEIGHTS = [0.3, 0.7]` en `config.py`).
-
-## Decisiones de diseño
-
-- **Tamaño de chunk (1600 caracteres, ~265 tokens en promedio):** la consigna sugiere ~500–800 tokens, pero `multilingual-e5-large` solo acepta **512 tokens** por entrada y trunca el resto. Chunks más grandes perderían su final al generar el embedding. Se eligió el mayor tamaño que entra con margen (el chunk más grande mide ~500 tokens). Para usar chunks de 500–800 tokens habría que cambiar a un modelo de contexto más largo, como `llama-text-embed-v2` (2048 tokens, también 1024 dim).
-- **Dimensión 1024 (no 1536):** la consigna menciona 1536 para `text-embedding-3-small` de OpenAI. Acá los embeddings se generan con Pinecone Inference (`multilingual-e5-large`, 1024 dim), así que no hace falta una API key de OpenAI y el índice se crea con 1024. `setup_index.py` valida que ambas coincidan.
-- **LLM:** se usa Gemini en lugar de OpenAI o Anthropic. Solo interviene en la generación (`rag.py`); la ingesta, la recuperación y la evaluación no dependen del LLM.
-- **Ids determinísticos:** re-subir los mismos documentos sobrescribe los vectores en lugar de duplicarlos.
-- **Relevancia a nivel documento:** el golden set indica el PDF fuente (como pide la consigna), así que un chunk cuenta como relevante si viene de ese PDF.
-
-## Limitaciones y posibles mejoras
-
-- **Preguntas en otro idioma:** BM25 compara palabras exactas, así que una pregunta en español sobre documentos en inglés casi no recibe aporte léxico. El resultado depende del retriever semántico, que sí es multilingüe.
-- **BM25 en memoria:** se reconstruye en cada ejecución a partir de `chunks.json`. Para corpus grandes convendría usar *sparse vectors* en Pinecone (p. ej. `pinecone-sparse-english-v0`) y hacer la búsqueda híbrida del lado del servidor.
-- **Golden set chico:** 5 preguntas sobre 4 documentos saturan Recall y MRR. Un benchmark más grande, con preguntas ambiguas entre documentos y relevancia a nivel chunk, permitiría ajustar `WEIGHTS` y `TOP_K` con más precisión.
