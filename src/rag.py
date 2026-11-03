@@ -4,12 +4,12 @@ from functools import lru_cache
 from langchain_core.documents import Document
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import Runnable, RunnablePassthrough
+from langchain_core.runnables import Runnable, RunnableLambda, RunnablePassthrough
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
 
 from src.config import GOOGLE_API_KEY, LLM_MODEL
-from src.retriever import get_retriever
+from src.retriever import RAGSystem
 
 
 class RAGResponse(BaseModel):
@@ -52,7 +52,7 @@ def get_chain() -> Runnable:
     llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0, google_api_key=GOOGLE_API_KEY)
 
     return (
-        {"context": get_retriever() | format_docs, "question": RunnablePassthrough()}
+        {"context": RunnableLambda(RAGSystem().retrieve) | format_docs, "question": RunnablePassthrough()}
         | prompt
         | llm
         | parser
